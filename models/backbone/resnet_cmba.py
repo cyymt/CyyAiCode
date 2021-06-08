@@ -3,11 +3,12 @@ import torch.nn as nn
 import math
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
-from models.model_utils import ChannelAttention,SpatialAttention
+from models.model_utils import ChannelAttention, SpatialAttention
 
-
-__all__ = ['resnet18_cbam', 'resnet34_cbam', 'resnet50_cbam', 'resnet101_cbam',
-           'resnet152_cbam']
+__all__ = [
+    'resnet18_cbam', 'resnet34_cbam', 'resnet50_cbam', 'resnet101_cbam',
+    'resnet152_cbam'
+]
 
 model_urls = {
     'resnet18': 'https://download.pytorch.org/models/resnet18-5c106cde.pth',
@@ -16,13 +17,21 @@ model_urls = {
     'resnet101': 'https://download.pytorch.org/models/resnet101-5d3b4d8f.pth',
     'resnet152': 'https://download.pytorch.org/models/resnet152-b121ed2d.pth',
 }
+
+
 # "3x3 convolution with padding"
 def conv3x3(in_planes, out_planes, stride=1):
-    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
-                     padding=1, bias=False)
+    return nn.Conv2d(in_planes,
+                     out_planes,
+                     kernel_size=3,
+                     stride=stride,
+                     padding=1,
+                     bias=False)
+
 
 class BasicBlock(nn.Module):
     expansion = 1
+
     def __init__(self, inplanes, planes, stride=1, downsample=None):
         super(BasicBlock, self).__init__()
         self.conv1 = conv3x3(inplanes, planes, stride)
@@ -46,7 +55,7 @@ class BasicBlock(nn.Module):
 
         out = self.conv2(out)
         out = self.bn2(out)
-        
+
         # 通道和空间串联即可
         out = self.ca(out) * out
         out = self.sa(out) * out
@@ -67,8 +76,12 @@ class Bottleneck(nn.Module):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(inplanes, planes, kernel_size=1, bias=False)
         self.bn1 = nn.BatchNorm2d(planes)
-        self.conv2 = nn.Conv2d(planes, planes, kernel_size=3, stride=stride,
-                               padding=1, bias=False)
+        self.conv2 = nn.Conv2d(planes,
+                               planes,
+                               kernel_size=3,
+                               stride=stride,
+                               padding=1,
+                               bias=False)
         self.bn2 = nn.BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, planes * 4, kernel_size=1, bias=False)
         self.bn3 = nn.BatchNorm2d(planes * 4)
@@ -107,10 +120,19 @@ class Bottleneck(nn.Module):
 
 
 class ResNet(nn.Module):
-    def __init__(self, block, layers,num_classes=1000,input_channel=3,loss_type=False):
+    def __init__(self,
+                 block,
+                 layers,
+                 num_classes=1000,
+                 input_channel=3,
+                 loss_type=False):
         self.inplanes = 64
         super(ResNet, self).__init__()
-        self.conv1 = nn.Conv2d(input_channel, 64, kernel_size=7, stride=2, padding=3,
+        self.conv1 = nn.Conv2d(input_channel,
+                               64,
+                               kernel_size=7,
+                               stride=2,
+                               padding=3,
                                bias=False)
         self.bn1 = nn.BatchNorm2d(64)
         self.relu = nn.ReLU(inplace=True)
@@ -122,7 +144,7 @@ class ResNet(nn.Module):
         self.avgpool = nn.AvgPool2d(7, stride=1)
         self.loss_type = loss_type
         if self.loss_type:
-            self.fc = nn.Linear(512 * block.expansion, num_classes,bias=False)
+            self.fc = nn.Linear(512 * block.expansion, num_classes, bias=False)
         else:
             self.fc = nn.Linear(512 * block.expansion, num_classes)
 
@@ -138,8 +160,11 @@ class ResNet(nn.Module):
         downsample = None
         if stride != 1 or self.inplanes != planes * block.expansion:
             downsample = nn.Sequential(
-                nn.Conv2d(self.inplanes, planes * block.expansion,
-                          kernel_size=1, stride=stride, bias=False),
+                nn.Conv2d(self.inplanes,
+                          planes * block.expansion,
+                          kernel_size=1,
+                          stride=stride,
+                          bias=False),
                 nn.BatchNorm2d(planes * block.expansion),
             )
 
@@ -166,75 +191,108 @@ class ResNet(nn.Module):
         x = x.view(x.size(0), -1)
         output = self.fc(x)
         if self.loss_type:
-            self.fc.weight = nn.Parameter(F.normalize(self.fc.weight, p=2, dim=1))
-            return output,self.fc(F.normalize(x, p=2, dim=1))
+            self.fc.weight = nn.Parameter(
+                F.normalize(self.fc.weight, p=2, dim=1))
+            return output, self.fc(F.normalize(x, p=2, dim=1))
         else:
             return output
-def resnet18_cbam(num_classes=1000, input_channel=3,loss_type=False,pretrained=False):
+
+
+def resnet18_cbam(num_classes=1000,
+                  input_channel=3,
+                  loss_type=False,
+                  pretrained=False):
     """Constructs a ResNet-18 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(BasicBlock, [2, 2, 2, 2],num_classes=num_classes, input_channel=input_channel,loss_type=loss_type)
+    model = ResNet(BasicBlock, [2, 2, 2, 2],
+                   num_classes=num_classes,
+                   input_channel=input_channel,
+                   loss_type=loss_type)
     if pretrained:
         pretrained_state_dict = model_zoo.load_url(model_urls['resnet18'])
-        now_state_dict        = model.state_dict()
+        now_state_dict = model.state_dict()
         now_state_dict.update(pretrained_state_dict)
         model.load_state_dict(now_state_dict)
     return model
 
 
-def resnet34_cbam(num_classes=1000, input_channel=3,loss_type=False,pretrained=False):
+def resnet34_cbam(num_classes=1000,
+                  input_channel=3,
+                  loss_type=False,
+                  pretrained=False):
     """Constructs a ResNet-34 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(BasicBlock, [3, 4, 6, 3],num_classes=num_classes, input_channel=input_channel,loss_type=loss_type)
+    model = ResNet(BasicBlock, [3, 4, 6, 3],
+                   num_classes=num_classes,
+                   input_channel=input_channel,
+                   loss_type=loss_type)
     if pretrained:
         pretrained_state_dict = model_zoo.load_url(model_urls['resnet34'])
-        now_state_dict        = model.state_dict()
+        now_state_dict = model.state_dict()
         now_state_dict.update(pretrained_state_dict)
         model.load_state_dict(now_state_dict)
     return model
 
 
-def resnet50_cbam(num_classes=1000, input_channel=3,loss_type=False,pretrained=False):
+def resnet50_cbam(num_classes=1000,
+                  input_channel=3,
+                  loss_type=False,
+                  pretrained=False):
     """Constructs a ResNet-50 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(Bottleneck, [3, 4, 6, 3],num_classes=num_classes, input_channel=input_channel,loss_type=loss_type)
+    model = ResNet(Bottleneck, [3, 4, 6, 3],
+                   num_classes=num_classes,
+                   input_channel=input_channel,
+                   loss_type=loss_type)
     if pretrained:
         pretrained_state_dict = model_zoo.load_url(model_urls['resnet50'])
-        now_state_dict        = model.state_dict()
+        now_state_dict = model.state_dict()
         now_state_dict.update(pretrained_state_dict)
         model.load_state_dict(now_state_dict)
     return model
 
 
-def resnet101_cbam(num_classes=1000, input_channel=3,loss_type=False,pretrained=False):
+def resnet101_cbam(num_classes=1000,
+                   input_channel=3,
+                   loss_type=False,
+                   pretrained=False):
     """Constructs a ResNet-101 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(Bottleneck, [3, 4, 23, 3],num_classes=num_classes, input_channel=input_channel,loss_type=loss_type)
+    model = ResNet(Bottleneck, [3, 4, 23, 3],
+                   num_classes=num_classes,
+                   input_channel=input_channel,
+                   loss_type=loss_type)
     if pretrained:
         pretrained_state_dict = model_zoo.load_url(model_urls['resnet101'])
-        now_state_dict        = model.state_dict()
+        now_state_dict = model.state_dict()
         now_state_dict.update(pretrained_state_dict)
         model.load_state_dict(now_state_dict)
     return model
 
 
-def resnet152_cbam(num_classes=1000, input_channel=3,loss_type=False,pretrained=False):
+def resnet152_cbam(num_classes=1000,
+                   input_channel=3,
+                   loss_type=False,
+                   pretrained=False):
     """Constructs a ResNet-152 model.
     Args:
         pretrained (bool): If True, returns a model pre-trained on ImageNet
     """
-    model = ResNet(Bottleneck, [3, 8, 36, 3],num_classes=num_classes, input_channel=input_channel,loss_type=loss_type)
+    model = ResNet(Bottleneck, [3, 8, 36, 3],
+                   num_classes=num_classes,
+                   input_channel=input_channel,
+                   loss_type=loss_type)
     if pretrained:
         pretrained_state_dict = model_zoo.load_url(model_urls['resnet152'])
-        now_state_dict        = model.state_dict()
+        now_state_dict = model.state_dict()
         now_state_dict.update(pretrained_state_dict)
         model.load_state_dict(now_state_dict)
     return model
