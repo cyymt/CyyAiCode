@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# 第一个卷积层不能量化，因为图片是8bit，如果直接二值化，丢失信息过多
+__all__ = ["BiRealConv2d", "BiRealConvTranspose2d", "BiRealLinear"]
 
 
 class BinActiveBiReal(nn.Module):

@@ -9,3 +9,4 @@ from .quantize.bnn import *
 from .quantize.bwn import *
 from .quantize.xnor import *
 from .quantize.dorefa import *
+from .quantize.twn import *

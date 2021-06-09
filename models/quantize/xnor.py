@@ -2,18 +2,27 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+__all__ = ["XnorConv2d", "XnorConvTranspose2d", "XnorLinear"]
+
+
+# W中心化且截断,micronet
+def weight_center_clip(w):
+    mean = w.data.mean(1, keepdim=True)
+    w.data.sub_(mean)  # W中心化(C方向)
+    w.data.clamp_(-1.0, 1.0)  # W截断
+    return w
+
+
 # 第一个卷积层不能量化，因为图片是8bit，如果直接二值化，丢失信息过多
-
-
-class BinActive(torch.autograd.Function):
+class BinaryActivation(torch.autograd.Function):
     '''
     Binarize the input activations for ***** BNN and XNOR *****.
     '''
     @staticmethod
     def forward(ctx, input):
         ctx.save_for_backward(input)
-        input = input.sign()  # 使用y=x函数拟合梯度
-        return input
+        output = input.sign()  # 使用y=x函数拟合梯度
+        return output
 
     @staticmethod
     def backward(
@@ -26,6 +35,19 @@ class BinActive(torch.autograd.Function):
         grad_input[input.ge(1)] = 0
         grad_input[input.le(-1)] = 0
         # 最终的梯度结果就是sign函数的梯度计算使用clip(-1,x,1)函数来拟合
+        return grad_input
+
+
+class BinaryWeight(torch.autograd.Function):
+    @staticmethod
+    def forward(self, input):
+        output = torch.sign(input)
+        return output
+
+    @staticmethod
+    def backward(self, grad_output):
+        # *******************ste*********************
+        grad_input = grad_output.clone()
         return grad_input
 
 
@@ -47,14 +69,14 @@ class XnorConv2d(nn.Conv2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = self.weight
+        w = weight_center_clip(self.weight)
         alpha = torch.mean(torch.mean(torch.mean(abs(w), dim=3, keepdim=True),
                                       dim=2,
                                       keepdim=True),
                            dim=1,
                            keepdim=True).detach()
-        bw = BinActive.apply(w) * alpha  # 输出结果是{-1,1}的矩阵
-        bx = BinActive.apply(x)
+        bw = BinaryWeight.apply(w) * alpha  # 输出结果是{-1,1}的矩阵
+        bx = BinaryActivation.apply(x)
 
         output = F.conv2d(bx, bw, self.bias, self.stride, self.padding,
                           self.dilation, self.groups)
@@ -82,15 +104,15 @@ class XnorConvTranspose2d(nn.ConvTranspose2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = self.weight
+        w = weight_center_clip(self.weight)
         alpha = torch.mean(torch.mean(torch.mean(abs(w), dim=3, keepdim=True),
                                       dim=2,
                                       keepdim=True),
                            dim=1,
                            keepdim=True).detach()
 
-        bw = BinActive.apply(w) * alpha
-        bx = BinActive.apply(x)
+        bw = BinaryWeight.apply(w) * alpha
+        bx = BinaryActivation.apply(x)
 
         output = F.conv_transpose2d(bx, bw, self.bias, self.stride,
                                     self.padding, self.output_padding,
@@ -107,8 +129,8 @@ class XnorLinear(nn.Linear):
         w = self.weight
         alpha = torch.mean(abs(w), dim=-1, keepdim=True).detach()
 
-        bw = BinActive.apply(w) * alpha
-        bx = BinActive.apply(x)
+        bw = BinaryWeight.apply(w) * alpha
+        bx = BinaryActivation.apply(x)
 
         output = F.linear(bx, bw, self.bias)
 

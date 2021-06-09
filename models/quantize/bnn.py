@@ -4,16 +4,26 @@ import torch.nn.functional as F
 
 # 第一个卷积层不能量化，因为图片是8bit，如果直接二值化，丢失信息过多
 
+__all__ = ["BNNConv2d", "BNNConvTranspose2d", "BNNLinear"]
 
-class BinActive(torch.autograd.Function):
+
+# W中心化且截断,micronet
+def weight_center_clip(w):
+    mean = w.data.mean(1, keepdim=True)
+    w.data.sub_(mean)  # W中心化(C方向)
+    w.data.clamp_(-1.0, 1.0)  # W截断
+    return w
+
+
+class BinaryActivation(torch.autograd.Function):
     '''
     Binarize the input activations for ***** BNN and XNOR *****.
     '''
     @staticmethod
     def forward(ctx, input):
         ctx.save_for_backward(input)
-        input = input.sign()  # 使用y=x函数拟合梯度
-        return input
+        output = input.sign()  # 使用y=x函数拟合梯度
+        return output
 
     @staticmethod
     def backward(
@@ -26,6 +36,19 @@ class BinActive(torch.autograd.Function):
         grad_input[input.ge(1)] = 0
         grad_input[input.le(-1)] = 0
         # 最终的梯度结果就是sign函数的梯度计算使用clip(-1,x,1)函数来拟合
+        return grad_input
+
+
+class BinaryWeight(torch.autograd.Function):
+    @staticmethod
+    def forward(self, input):
+        output = torch.sign(input)
+        return output
+
+    @staticmethod
+    def backward(self, grad_output):
+        # *******************ste*********************
+        grad_input = grad_output.clone()
         return grad_input
 
 
@@ -47,10 +70,10 @@ class BNNConv2d(nn.Conv2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = self.weight
+        w = weight_center_clip(self.weight)
 
-        bw = BinActive.apply(w)  # 输出结果是{-1,1}的矩阵
-        bx = BinActive.apply(x)
+        bw = BinaryWeight.apply(w)  # 输出结果是{-1,1}的矩阵
+        bx = BinaryActivation.apply(x)
 
         output = F.conv2d(bx, bw, self.bias, self.stride, self.padding,
                           self.dilation, self.groups)
@@ -78,15 +101,14 @@ class BNNConvTranspose2d(nn.ConvTranspose2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = self.weight
+        w = weight_center_clip(self.weight)
 
-        bw = BinActive.apply(w)  # 输出结果是{-1,1}的矩阵
-        bx = BinActive.apply(x)
+        bw = BinaryWeight.apply(w)  # 输出结果是{-1,1}的矩阵
+        bx = BinaryActivation.apply(x)
 
         output = F.conv_transpose2d(bx, bw, self.bias, self.stride,
                                     self.padding, self.output_padding,
                                     self.groups, self.dilation)
-        # import pdb; pdb.set_trace()
         return output
 
 
@@ -97,8 +119,8 @@ class BNNLinear(nn.Linear):
     def forward(self, x):
         w = self.weight
 
-        bw = BinActive.apply(w)
-        bx = BinActive.apply(x)
+        bw = BinaryWeight.apply(w)
+        bx = BinaryActivation.apply(x)
 
         output = F.linear(bx, bw, self.bias)
 

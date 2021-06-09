@@ -2,16 +2,17 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+__all__ = ["DorefaConv2d", "DorefaConvTranspose2d", "DorefaLinear"]
+
+
 # 第一个卷积层不能量化，因为图片是8bit，如果直接二值化，丢失信息过多
-
-
 def quantize_k(r_i, nbit):
     scale = (2**nbit - 1)
     r_o = torch.round(scale * r_i) / scale
     return r_o
 
 
-class DoReFaQuant(torch.autograd.Function):
+class DorefaWeight(torch.autograd.Function):
     @staticmethod
     def forward(ctx, r_i, nbit):
         if nbit == 32:
@@ -34,7 +35,7 @@ class DoReFaQuant(torch.autograd.Function):
 
 
 # 改善版的对激活也做量化限定
-class ActivateQuantizer(torch.autograd.Function):
+class DorefaActivation(torch.autograd.Function):
     @staticmethod
     def forward(ctx, input, nbit):
         if nbit == 32:
@@ -71,8 +72,8 @@ class DorefaConv2d(nn.Conv2d):
 
     def forward(self, x, w_nbit, a_nbit):
         w = self.weight
-        bw = DoReFaQuant.apply(w, w_nbit)
-        bx = ActivateQuantizer.apply(x, a_nbit)
+        bw = DorefaWeight.apply(w, w_nbit)
+        bx = DorefaActivation.apply(x, a_nbit)
 
         output = F.conv2d(bx, bw, self.bias, self.stride, self.padding,
                           self.dilation, self.groups)
@@ -101,8 +102,8 @@ class DorefaConvTranspose2d(nn.ConvTranspose2d):
 
     def forward(self, x, w_nbit, a_nbit):
         w = self.weight
-        bw = DoReFaQuant.apply(w, w_nbit)
-        bx = ActivateQuantizer.apply(x, a_nbit)
+        bw = DorefaWeight.apply(w, w_nbit)
+        bx = DorefaActivation.apply(x, a_nbit)
 
         output = F.conv_transpose2d(bx, bw, self.bias, self.stride,
                                     self.padding, self.output_padding,
@@ -116,8 +117,8 @@ class DorefaLinear(nn.Linear):
 
     def forward(self, x, w_nbit, a_nbit):
         w = self.weight
-        bw = DoReFaQuant.apply(w, w_nbit)
-        bx = ActivateQuantizer.apply(x, a_nbit)
+        bw = DorefaWeight.apply(w, w_nbit)
+        bx = DorefaActivation.apply(x, a_nbit)
 
         output = F.linear(bx, bw, self.bias)
 

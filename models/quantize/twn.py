@@ -2,23 +2,34 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-# relu也要二值化？micronet中使用了,todo
-__all__ = ["BWNConv2d", "BWNConvTranspose2d", "BWNLinear"]
+# 三值网络[-1,0,1]
+__all__ = ["TWNConv2d", "TWNConvTranspose2d", "TWNLinear"]
 
 
-# W中心化且截断,micronet
-def weight_center_clip(w):
-    mean = w.data.mean(1, keepdim=True)
-    w.data.sub_(mean)  # W中心化(C方向)
-    w.data.clamp_(-1.0, 1.0)  # W截断
-    return w
-
-
-class BinaryWeight(torch.autograd.Function):
+class TernaryWeight(torch.autograd.Function):
     @staticmethod
-    def forward(self, input):
-        output = torch.sign(input)
-        return output
+    def forward(self, input, layer_type='conv'):
+        dims_size = (3, 2, 1)
+        if layer_type != "conv":
+            dims_size = (-1, )
+        output_fp = input.clone()
+        E = torch.mean(torch.abs(input), dims_size, keepdim=True)
+        threshold = E * 0.7
+        # ************** W —— +-1、0 **************
+        output_twn = torch.sign(
+            torch.add(torch.sign(torch.add(input, threshold)),
+                      torch.sign(torch.add(input, -threshold))))
+
+        # **************** α(缩放因子) ****************
+        output_abs = torch.abs(output_fp)
+        # <=thresh的用0代替
+        filter_output = torch.where(output_abs > threshold, output_abs,
+                                    torch.zeros_like(output_abs))
+        alpha = torch.sum(filter_output, dims_size, keepdim=True) / torch.sum(
+            output_abs.gt(threshold), dims_size, keepdim=True)
+        # *************** W * α ****************
+        output = output_twn * alpha  # 若不需要α(缩放因子)，注释掉即可
+        return output_twn, output
 
     @staticmethod
     def backward(self, grad_output):
@@ -27,7 +38,7 @@ class BinaryWeight(torch.autograd.Function):
         return grad_input
 
 
-class BWNConv2d(nn.Conv2d):
+class TWNConv2d(nn.Conv2d):
     def __init__(self,
                  in_channels,
                  out_channels,
@@ -38,24 +49,22 @@ class BWNConv2d(nn.Conv2d):
                  groups=1,
                  bias=True,
                  padding_mode='zeros'):
-        super(BWNConv2d,
+        super(TWNConv2d,
               self).__init__(in_channels, out_channels, kernel_size, stride,
                              padding, dilation, groups, bias, padding_mode)
         # self.weight = nn.Parameter(torch.rand((out_channels, in_channels, kernel_size, kernel_size)) * 0.001,requires_grad=True)
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = weight_center_clip(self.weight)
-        alpha = torch.mean(torch.abs(w), (3, 2, 1), keepdim=True).detach()
-        bw = BinaryWeight.apply(w) * alpha  # 输出结果是{-1,1}的矩阵
+        w = self.weight
+        bw_twn, bw = TernaryWeight.apply(w)
 
         output = F.conv2d(x, bw, self.bias, self.stride, self.padding,
                           self.dilation, self.groups)
-        # import pdb; pdb.set_trace()
         return output
 
 
-class BWNConvTranspose2d(nn.ConvTranspose2d):
+class TWNConvTranspose2d(nn.ConvTranspose2d):
     def __init__(self,
                  in_channels,
                  out_channels,
@@ -67,7 +76,7 @@ class BWNConvTranspose2d(nn.ConvTranspose2d):
                  groups=1,
                  bias=True,
                  padding_mode='zeros'):
-        super(BWNConvTranspose2d,
+        super(TWNConvTranspose2d,
               self).__init__(in_channels, out_channels, kernel_size, stride,
                              padding, output_padding, dilation, groups, bias,
                              padding_mode)
@@ -75,27 +84,21 @@ class BWNConvTranspose2d(nn.ConvTranspose2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = weight_center_clip(self.weight)
-        alpha = torch.mean(torch.abs(w), (3, 2, 1), keepdim=True).detach()
-
-        bw = BinaryWeight.apply(w) * alpha
-
+        w = self.weight
+        bw_twn, bw = TernaryWeight.apply(w)
         output = F.conv_transpose2d(x, bw, self.bias, self.stride,
                                     self.padding, self.output_padding,
                                     self.groups, self.dilation)
-        # import pdb; pdb.set_trace()
         return output
 
 
-class BWNLinear(nn.Linear):
+class TWNLinear(nn.Linear):
     def __init__(self, in_features, out_features, bias=True):
-        super(BWNLinear, self).__init__(in_features, out_features, bias)
+        super(TWNLinear, self).__init__(in_features, out_features, bias)
 
     def forward(self, x):
         w = self.weight
-        alpha = torch.mean(abs(w), dim=-1, keepdim=True).detach()
-
-        bw = BinaryWeight.apply(w) * alpha
+        bw_twn, bw = TernaryWeight.apply(w, 'fc')
 
         output = F.linear(x, bw, self.bias)
 
