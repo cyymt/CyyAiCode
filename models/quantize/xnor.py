@@ -5,7 +5,7 @@ import torch.nn.functional as F
 __all__ = ["XnorConv2d", "XnorConvTranspose2d", "XnorLinear"]
 
 
-# W中心化且截断,micronet
+# W中心化且截断,micronet,实际加上后效果很差
 def weight_center_clip(w):
     mean = w.data.mean(1, keepdim=True)
     w.data.sub_(mean)  # W中心化(C方向)
@@ -69,7 +69,8 @@ class XnorConv2d(nn.Conv2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = weight_center_clip(self.weight)
+        # w = weight_center_clip(self.weight)
+        w = self.weight
         alpha = torch.mean(torch.mean(torch.mean(abs(w), dim=3, keepdim=True),
                                       dim=2,
                                       keepdim=True),
@@ -104,7 +105,8 @@ class XnorConvTranspose2d(nn.ConvTranspose2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = weight_center_clip(self.weight)
+        # w = weight_center_clip(self.weight)
+
         alpha = torch.mean(torch.mean(torch.mean(abs(w), dim=3, keepdim=True),
                                       dim=2,
                                       keepdim=True),

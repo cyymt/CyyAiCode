@@ -6,7 +6,7 @@ import torch.nn.functional as F
 __all__ = ["BWNConv2d", "BWNConvTranspose2d", "BWNLinear"]
 
 
-# W中心化且截断,micronet
+# W中心化且截断,micronet,实际加上后效果很差
 def weight_center_clip(w):
     mean = w.data.mean(1, keepdim=True)
     w.data.sub_(mean)  # W中心化(C方向)
@@ -45,7 +45,8 @@ class BWNConv2d(nn.Conv2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = weight_center_clip(self.weight)
+        # w = weight_center_clip(self.weight)
+        w = self.weight
         alpha = torch.mean(torch.abs(w), (3, 2, 1), keepdim=True).detach()
         bw = BinaryWeight.apply(w) * alpha  # 输出结果是{-1,1}的矩阵
 
@@ -75,7 +76,8 @@ class BWNConvTranspose2d(nn.ConvTranspose2d):
         nn.init.xavier_uniform_(self.weight)
 
     def forward(self, x):
-        w = weight_center_clip(self.weight)
+        # w = weight_center_clip(self.weight)
+        w = self.weight
         alpha = torch.mean(torch.abs(w), (3, 2, 1), keepdim=True).detach()
 
         bw = BinaryWeight.apply(w) * alpha
