@@ -16,13 +16,14 @@ def weight_center_clip(w):
 
 class BinaryWeight(torch.autograd.Function):
     @staticmethod
-    def forward(self, input):
-        output = torch.sign(input)
+    def forward(ctx, input):
+        ctx.save_for_backward(input)
+        output = input.sign()
         return output
 
     @staticmethod
-    def backward(self, grad_output):
-        # *******************ste*********************
+    def backward(ctx, grad_output):
+        input, = ctx.saved_tensors
         grad_input = grad_output.clone()
         return grad_input
 

@@ -8,9 +8,9 @@ __all__ = ["TWNConv2d", "TWNConvTranspose2d", "TWNLinear"]
 
 class TernaryWeight(torch.autograd.Function):
     @staticmethod
-    def forward(self, input, layer_type='conv'):
+    def forward(self, input):
         dims_size = (3, 2, 1)
-        if layer_type != "conv":
+        if len(input.shape) == 2:
             dims_size = (-1, )
         output_fp = input.clone()
         E = torch.mean(torch.abs(input), dims_size, keepdim=True)
@@ -29,10 +29,12 @@ class TernaryWeight(torch.autograd.Function):
             output_abs.gt(threshold), dims_size, keepdim=True)
         # *************** W * α ****************
         output = output_twn * alpha  # 若不需要α(缩放因子)，注释掉即可
-        return output_twn, output
+        return output
 
+    # def forward ---> return output, threshold
+    # def backward(self, grad_output, grad_threshold):
     @staticmethod
-    def backward(self, grad_output):
+    def backward(self, grad_output):  # forward只有一个输出，backward就只有一个输入，否则有多个
         # *******************ste*********************
         grad_input = grad_output.clone()
         return grad_input
@@ -57,7 +59,7 @@ class TWNConv2d(nn.Conv2d):
 
     def forward(self, x):
         w = self.weight
-        bw_twn, bw = TernaryWeight.apply(w)
+        bw = TernaryWeight.apply(w)
 
         output = F.conv2d(x, bw, self.bias, self.stride, self.padding,
                           self.dilation, self.groups)
@@ -85,7 +87,7 @@ class TWNConvTranspose2d(nn.ConvTranspose2d):
 
     def forward(self, x):
         w = self.weight
-        bw_twn, bw = TernaryWeight.apply(w)
+        bw = TernaryWeight.apply(w)
         output = F.conv_transpose2d(x, bw, self.bias, self.stride,
                                     self.padding, self.output_padding,
                                     self.groups, self.dilation)
@@ -98,7 +100,7 @@ class TWNLinear(nn.Linear):
 
     def forward(self, x):
         w = self.weight
-        bw_twn, bw = TernaryWeight.apply(w, 'fc')
+        bw = TernaryWeight.apply(w)
 
         output = F.linear(x, bw, self.bias)
 
