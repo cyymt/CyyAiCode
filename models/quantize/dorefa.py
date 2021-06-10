@@ -45,7 +45,8 @@ class DorefaActivation(torch.autograd.Function):
             assert nbit != 1
         else:
             # 对x进行截断(x截断前先进行缩放（* 0.1），目的是减小截断误差)，适应于relu激活的函数，如果是使用PACT限定的话，就不能用了
-            output = quantize_k(torch.clamp(0.1 * input, 0, 1), nbit)
+            # output = quantize_k(torch.clamp(0.1 * input, 0, 1), nbit)
+            output = quantize_k(input, nbit)  # 做限制后第一层卷积对输入图片截断太多，精度差的特别厉害
         return output
 
     @staticmethod
